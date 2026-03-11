@@ -1,61 +1,28 @@
 const { Router } = require('express');
+const path = require('path');
 const { authMiddleware } = require('../middleware/auth');
 const { prisma } = require('../lib/prisma');
 
 const router = Router();
 router.use(authMiddleware);
 
-// Cached cities list from Pikud HaOref
+// Cities list — bundled static file (oref geo-blocks non-Israeli IPs)
 let citiesCache = null;
-let citiesCacheTime = 0;
-const CITIES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-const CITIES_URLS = [
-  'https://alerts-history.oref.org.il/Shared/Ajax/GetCitiesMix.aspx?lang=he',
-  'https://www.oref.org.il/districts/cities_heb.json',
-];
-
-async function fetchCities() {
-  if (citiesCache && Date.now() - citiesCacheTime < CITIES_CACHE_TTL) {
-    return citiesCache;
+function getCities() {
+  if (!citiesCache) {
+    citiesCache = require('../data/cities.json');
+    console.log(`[Config] Loaded ${citiesCache.length} cities from bundled file`);
   }
-  for (const url of CITIES_URLS) {
-    try {
-      const res = await fetch(url, {
-        headers: { 'Referer': 'https://www.oref.org.il/', 'X-Requested-With': 'XMLHttpRequest' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) {
-        console.log(`[Config] Cities fetch ${url} → HTTP ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) {
-        console.log(`[Config] Cities fetch ${url} → empty or invalid`);
-        continue;
-      }
-      citiesCache = data.map((c) => ({
-        label: c.label_he || c.label,
-        area: (c.mixname || '').replace(/<[^>]*>/g, '').replace(c.label_he || c.label, '').replace('|', '').trim(),
-        migunTime: c.migun_time,
-      }));
-      citiesCacheTime = Date.now();
-      console.log(`[Config] Loaded ${citiesCache.length} cities from ${url}`);
-      return citiesCache;
-    } catch (err) {
-      console.log(`[Config] Cities fetch ${url} → error: ${err.message}`);
-    }
-  }
-  return citiesCache || [];
+  return citiesCache;
 }
 
 // Get cities list for autocomplete
-router.get('/cities', async (_req, res) => {
+router.get('/cities', (_req, res) => {
   try {
-    const cities = await fetchCities();
-    res.json({ cities });
+    res.json({ cities: getCities() });
   } catch (error) {
-    console.error('[Config] /cities route error:', error);
+    console.error('[Config] /cities error:', error);
     res.status(500).json({ error: 'שגיאה בטעינת ערים' });
   }
 });
