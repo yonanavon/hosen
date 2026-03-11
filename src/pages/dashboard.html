@@ -109,7 +109,7 @@
         <div class="form-group" style="position:relative">
           <label>ערים</label>
           <div id="selectedCities" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>
-          <input type="text" id="cfgCitiesInput" placeholder="הקלד שם עיר..." autocomplete="off">
+          <input type="text" id="cfgCitiesInput" placeholder="טוען רשימת ערים..." autocomplete="off" disabled>
           <div id="citySuggestions" style="display:none;position:absolute;z-index:100;background:#1e293b;border:1px solid #334155;border-radius:8px;max-height:200px;overflow-y:auto;width:100%;top:100%"></div>
           <input type="hidden" id="cfgCities">
         </div>
@@ -249,12 +249,18 @@
     const selectedCitiesList = [];
 
     async function loadCities() {
+      const inp = document.getElementById('cfgCitiesInput');
       try {
         const res = await fetch('/api/config/cities', { headers });
-        const { cities } = await res.json();
-        allCities = cities;
-        console.log('Loaded', cities.length, 'cities');
-      } catch { /* ignore */ }
+        const data = await res.json();
+        allCities = data.cities || [];
+        inp.placeholder = allCities.length ? `הקלד שם עיר (${allCities.length} ערים)...` : 'שגיאה בטעינת ערים';
+        inp.disabled = false;
+      } catch (e) {
+        console.error('loadCities error:', e);
+        inp.placeholder = 'שגיאה בטעינת ערים';
+        inp.disabled = false;
+      }
     }
     loadCities();
 
