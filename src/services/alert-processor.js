@@ -1,6 +1,7 @@
 const { prisma } = require('../lib/prisma');
 const { getWhatsAppService } = require('./whatsapp.service');
 const { getStickerWithBuffer } = require('./sticker.service');
+const debug = require('./debug-log');
 
 const LEAVE_DELAY_MS = parseInt(process.env.LEAVE_DELAY_MS || '10000', 10);
 const COOLDOWN_MS = parseInt(process.env.COOLDOWN_MS || '300000', 10);
@@ -37,10 +38,14 @@ async function sendStickerForPhase(config, phase) {
   const mapping = await prisma.stickerMapping.findUnique({
     where: { alertConfigId_phase: { alertConfigId: config.id, phase } },
   });
-  if (!mapping) return;
+  if (!mapping) {
+    debug.log('AlertProcessor', 'warn', `לא נמצא מיפוי סטיקר לפאזה "${phase}" בהגדרה "${config.name}" (id=${config.id})`);
+    return;
+  }
 
   const sticker = await getStickerWithBuffer(mapping.stickerTag);
   if (!sticker) {
+    debug.log('AlertProcessor', 'error', `סטיקר "${mapping.stickerTag}" לא נמצא בDB עבור פאזה "${phase}" בהגדרה "${config.name}"`);
     console.log(`[AlertProcessor] Sticker "${mapping.stickerTag}" not found for phase "${phase}"`);
     return;
   }
@@ -49,6 +54,7 @@ async function sendStickerForPhase(config, phase) {
     const wa = getWhatsAppService();
     const buffer = Buffer.from(sticker.buffer, 'base64');
     await wa.sendSticker(config.groupJid, buffer);
+    debug.log('AlertProcessor', 'send', `נשלח סטיקר "${mapping.stickerTag}" (${phase}) לקבוצה ${config.groupJid}`, { config: config.name, phase, stickerTag: mapping.stickerTag, groupJid: config.groupJid });
     console.log(`[AlertProcessor] Sent "${phase}" sticker (${mapping.stickerTag}) to ${config.groupJid}`);
 
     // Log it
@@ -62,6 +68,7 @@ async function sendStickerForPhase(config, phase) {
       },
     });
   } catch (err) {
+    debug.log('AlertProcessor', 'error', `שגיאה בשליחת סטיקר "${mapping.stickerTag}" לקבוצה ${config.groupJid}: ${err.message}`, { error: err.message, config: config.name, phase });
     console.error(`[AlertProcessor] Error sending sticker:`, err);
   }
 }
@@ -88,23 +95,55 @@ async function processAlerts(alerts) {
     }
   }
 
+  // Log raw alert data when there are active alerts
+  if (activeCities.size > 0) {
+    debug.log('OrefAlerts', 'alert', `התקבלו ${activeCities.size} ערים בהתרעה`, {
+      cities: [...activeCities],
+      rawAlerts: alerts,
+      instructions: instructions || null,
+    });
+  }
+
+  if (!configs.length && activeCities.size > 0) {
+    debug.log('AlertProcessor', 'warn', 'יש התרעות פעילות אבל אין הגדרות פעילות (enabled) בDB');
+  }
+
   for (const config of configs) {
     const configCities = config.cities.split(',').map((c) => c.trim()).filter(Boolean);
     const cs = getConfigState(config.id);
 
     // Check if any configured city is in active alerts
     const hasMatch = configCities.some((city) => activeCities.has(city));
+    const matchedCities = configCities.filter((city) => activeCities.has(city));
+    const unmatchedConfigCities = configCities.filter((city) => !activeCities.has(city));
+
+    // Log matching analysis when there are active alerts
+    if (activeCities.size > 0) {
+      debug.log('AlertProcessor', 'match', `הגדרה "${config.name}" (${cs.state}): ${hasMatch ? 'יש התאמה' : 'אין התאמה'}`, {
+        configId: config.id,
+        configName: config.name,
+        configCities,
+        matchedCities,
+        unmatchedConfigCities,
+        activeCities: [...activeCities],
+        currentState: cs.state,
+        hasMatch,
+      });
+    }
 
     if (cs.state === 'IDLE') {
       if (hasMatch) {
         const now = Date.now();
         if (now - cs.lastEnterTime < COOLDOWN_MS) {
+          const remainingSec = Math.round((COOLDOWN_MS - (now - cs.lastEnterTime)) / 1000);
+          debug.log('AlertProcessor', 'warn', `הגדרה "${config.name}" בקולדאון (נותרו ${remainingSec} שניות), דילוג על enter`, { configName: config.name, remainingSec });
           console.log(`[AlertProcessor] Config "${config.name}" in cooldown, skipping enter`);
           continue;
         }
         cs.state = 'ALERTING';
         cs.lastEnterTime = now;
         cs.staySent = false;
+        debug.log('AlertProcessor', 'info', `הגדרה "${config.name}" → ALERTING (ערים: ${matchedCities.join(', ')})`, { configName: config.name, matchedCities });
         console.log(`[AlertProcessor] Config "${config.name}" → ALERTING`);
         await sendStickerForPhase(config, 'enter');
       }
@@ -143,4 +182,17 @@ async function processAlerts(alerts) {
   }
 }
 
-module.exports = { processAlerts };
+function getConfigStates() {
+  const result = {};
+  for (const [id, cs] of configStates) {
+    result[id] = {
+      state: cs.state,
+      lastEnterTime: cs.lastEnterTime ? new Date(cs.lastEnterTime).toISOString() : null,
+      staySent: cs.staySent,
+      hasLeaveTimer: !!cs.leaveTimer,
+    };
+  }
+  return result;
+}
+
+module.exports = { processAlerts, getConfigStates };

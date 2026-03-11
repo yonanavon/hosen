@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>דיבאג ולוגים - Hosen</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Courier New', monospace; background: #0a0e17; color: #c9d1d9; padding: 16px; font-size: 14px; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .header { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 16px; }
+    .header h1 { font-size: 1.3em; color: #58a6ff; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 1200px; margin: 0 auto 16px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }
+    .card h2 { font-size: 0.95em; color: #8b949e; margin-bottom: 10px; font-weight: 600; }
+    .card.full { grid-column: 1 / -1; }
+
+    .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.9em; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot.green { background: #3fb950; }
+    .dot.red { background: #f85149; }
+    .dot.yellow { background: #d29922; }
+    .dot.gray { background: #484f58; }
+
+    .issue { color: #f85149; font-size: 0.85em; margin: 2px 0 2px 18px; }
+    .ok { color: #3fb950; }
+
+    .config-block { border: 1px solid #30363d; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+    .config-block.has-issues { border-color: #f8514966; background: #f851490a; }
+    .config-header { display: flex; justify-content: space-between; align-items: center; }
+    .config-name { font-weight: 600; color: #c9d1d9; }
+    .state-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.75em; font-weight: 600; }
+    .state-IDLE { background: #21262d; color: #8b949e; }
+    .state-ALERTING { background: #f8514933; color: #f85149; }
+    .state-CLEARING { background: #d2992233; color: #d29922; }
+    .mapping-row { font-size: 0.85em; color: #8b949e; margin-top: 2px; }
+    .mapping-row .exists { color: #3fb950; }
+    .mapping-row .missing { color: #f85149; }
+
+    /* Log viewer */
+    .log-controls { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .log-controls select, .log-controls input { padding: 4px 8px; border-radius: 4px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; font-size: 0.85em; font-family: inherit; }
+    .log-controls button { padding: 4px 12px; border-radius: 4px; border: 1px solid #30363d; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 0.85em; font-family: inherit; }
+    .log-controls button:hover { background: #30363d; }
+    .log-controls button.active { background: #1f6feb; border-color: #1f6feb; }
+
+    #logContainer { max-height: 500px; overflow-y: auto; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; }
+    .log-entry { padding: 6px 10px; border-bottom: 1px solid #21262d; font-size: 0.85em; line-height: 1.4; display: flex; gap: 8px; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry:hover { background: #161b22; }
+    .log-ts { color: #484f58; white-space: nowrap; flex-shrink: 0; min-width: 80px; }
+    .log-source { color: #58a6ff; white-space: nowrap; flex-shrink: 0; min-width: 100px; }
+    .log-level { white-space: nowrap; flex-shrink: 0; min-width: 50px; font-weight: 600; }
+    .log-level.info { color: #58a6ff; }
+    .log-level.warn { color: #d29922; }
+    .log-level.error { color: #f85149; }
+    .log-level.alert { color: #f0883e; }
+    .log-level.match { color: #a371f7; }
+    .log-level.send { color: #3fb950; }
+    .log-msg { color: #c9d1d9; flex: 1; word-break: break-word; }
+    .log-data-toggle { color: #484f58; cursor: pointer; font-size: 0.8em; margin-right: 4px; }
+    .log-data-toggle:hover { color: #8b949e; }
+    .log-data { display: none; background: #0a0e17; border: 1px solid #21262d; border-radius: 4px; padding: 6px 8px; margin-top: 4px; font-size: 0.85em; color: #8b949e; white-space: pre-wrap; word-break: break-all; }
+
+    /* Live alerts */
+    .alert-item { background: #f8514915; border: 1px solid #f8514933; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+    .alert-cities { color: #f0883e; font-weight: 600; }
+    .alert-meta { font-size: 0.85em; color: #8b949e; margin-top: 2px; }
+
+    .oref-source { font-size: 0.85em; margin-top: 4px; }
+    .oref-source .name { color: #8b949e; }
+    .oref-source .status { font-weight: 600; }
+
+    .empty { color: #484f58; text-align: center; padding: 16px; }
+
+    .btn-sm { padding: 4px 10px; border-radius: 4px; border: 1px solid #30363d; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 0.85em; font-family: inherit; }
+    .btn-sm:hover { background: #30363d; }
+    .btn-danger { border-color: #f8514966; color: #f85149; }
+    .btn-danger:hover { background: #f8514922; }
+
+    .refresh-indicator { color: #484f58; font-size: 0.8em; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Hosen Debug Console</h1>
+    <div class="header-actions">
+      <span class="refresh-indicator" id="refreshIndicator"></span>
+      <a href="/dashboard">← לוח בקרה</a>
+      <button class="btn-sm" onclick="refreshAll()">רענן הכל</button>
+    </div>
+  </div>
+
+  <!-- Status Cards -->
+  <div class="grid">
+    <!-- WhatsApp Status -->
+    <div class="card" id="waCard">
+      <h2>WhatsApp חיבור</h2>
+      <div id="waStatus"><div class="empty">טוען...</div></div>
+    </div>
+
+    <!-- Oref Sources -->
+    <div class="card" id="orefCard">
+      <h2>מקורות התרעות (Oref API)</h2>
+      <div id="orefStatus"><div class="empty">טוען...</div></div>
+    </div>
+
+    <!-- Live Alerts -->
+    <div class="card">
+      <h2>התרעות פעילות כרגע</h2>
+      <div id="liveAlerts"><div class="empty">אין התרעות פעילות</div></div>
+    </div>
+
+    <!-- Config Diagnostics -->
+    <div class="card">
+      <h2>אבחון הגדרות</h2>
+      <div id="configDiag"><div class="empty">טוען...</div></div>
+    </div>
+  </div>
+
+  <!-- Log Viewer -->
+  <div class="grid">
+    <div class="card full">
+      <h2>לוג אירועים בזמן אמת</h2>
+      <div class="log-controls">
+        <select id="filterSource">
+          <option value="">כל המקורות</option>
+          <option value="OrefClient">OrefClient</option>
+          <option value="OrefAlerts">OrefAlerts</option>
+          <option value="AlertProcessor">AlertProcessor</option>
+          <option value="WhatsApp">WhatsApp</option>
+        </select>
+        <select id="filterLevel">
+          <option value="">כל הרמות</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+          <option value="alert">alert</option>
+          <option value="match">match</option>
+          <option value="send">send</option>
+        </select>
+        <input type="text" id="filterText" placeholder="חיפוש חופשי..." style="width:200px">
+        <button id="autoScrollBtn" class="active" onclick="toggleAutoScroll()">גלילה אוטומטית</button>
+        <button onclick="clearLogs()">נקה לוגים</button>
+        <span style="margin-right:auto;color:#484f58;font-size:0.8em" id="logCount">0 רשומות</span>
+      </div>
+      <div id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN = localStorage.getItem('token');
+    if (!TOKEN) window.location.href = '/';
+    const headers = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
+
+    const socket = io({ auth: { token: TOKEN } });
+
+    let autoScroll = true;
+    let allLogs = [];
+
+    // --- Diagnostics ---
+    async function loadDiagnostic() {
+      try {
+        const res = await fetch('/api/debug/diagnostic', { headers });
+        const d = await res.json();
+        renderWaStatus(d.whatsapp);
+        renderConfigDiag(d.configs, d.configStates);
+      } catch (e) {
+        console.error('diagnostic error:', e);
+      }
+    }
+
+    function renderWaStatus(wa) {
+      const el = document.getElementById('waStatus');
+      const dotClass = wa.ok ? 'green' : (wa.status === 'connecting' || wa.status === 'qr' ? 'yellow' : 'red');
+      const labels = { connected: 'מחובר', disconnected: 'מנותק', connecting: 'מתחבר...', qr: 'ממתין לסריקת QR' };
+      el.innerHTML = `
+        <div class="status-row">
+          <span class="dot ${dotClass}"></span>
+          <strong>${labels[wa.status] || wa.status}</strong>
+        </div>
+        ${!wa.ok ? '<div class="issue">WhatsApp לא מחובר — סטיקרים לא יישלחו!</div>' : ''}
+      `;
+    }
+
+    function renderConfigDiag(configs, states) {
+      const el = document.getElementById('configDiag');
+      if (!configs.length) {
+        el.innerHTML = '<div class="empty">אין הגדרות התרעה — צור הגדרה בלוח הבקרה</div>';
+        return;
+      }
+      el.innerHTML = configs.map(c => {
+        const st = states[c.id];
+        const stateLabel = st ? st.state : 'IDLE';
+        const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
+        const mappingsHtml = c.mappings.map(m => `
+          <div class="mapping-row">
+            ${phaseLabels[m.phase] || m.phase}: <strong>${m.stickerTag}</strong>
+            <span class="${m.stickerExists ? 'exists' : 'missing'}">${m.stickerExists ? '✓' : '✗ לא נמצא!'}</span>
+          </div>
+        `).join('');
+
+        const missingPhases = ['enter', 'stay', 'leave'].filter(p => !c.mappings.find(m => m.phase === p));
+        const missingHtml = missingPhases.map(p => `
+          <div class="mapping-row missing">
+            ${phaseLabels[p]}: <strong>לא מוגדר</strong>
+          </div>
+        `).join('');
+
+        return `
+          <div class="config-block ${c.issues.length ? 'has-issues' : ''}">
+            <div class="config-header">
+              <span class="config-name">
+                <span class="dot ${c.ok ? 'green' : 'red'}"></span>
+                ${c.name} ${c.enabled ? '' : '<span style="color:#f85149">(מושבת)</span>'}
+              </span>
+              <span class="state-badge state-${stateLabel}">${stateLabel}</span>
+            </div>
+            <div style="font-size:0.85em;color:#8b949e;margin-top:4px">ערים: ${c.cities}</div>
+            <div style="font-size:0.85em;color:#8b949e">קבוצה: ${c.groupJid}</div>
+            ${st && st.lastEnterTime ? `<div style="font-size:0.85em;color:#8b949e">כניסה אחרונה: ${new Date(st.lastEnterTime).toLocaleString('he-IL')}</div>` : ''}
+            <div style="margin-top:6px">${mappingsHtml}${missingHtml}</div>
+            ${c.issues.length ? c.issues.map(i => `<div class="issue">⚠ ${i}</div>`).join('') : '<div class="ok" style="font-size:0.85em;margin-top:4px">✓ הגדרה תקינה</div>'}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- Oref Status ---
+    async function loadOrefStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const d = await res.json();
+        const el = document.getElementById('orefStatus');
+        const activeSource = d.activeSources?.realtime;
+
+        let html = '';
+        if (d.sources) {
+          for (const [name, s] of Object.entries(d.sources)) {
+            if (s.type !== 'realtime') continue;
+            const isActive = name === activeSource;
+            const dotClass = s.ok ? (isActive ? 'green' : 'gray') : 'red';
+            html += `
+              <div class="oref-source">
+                <span class="dot ${dotClass}"></span>
+                <span class="name">${name}</span>
+                ${isActive ? '<span style="color:#3fb950;font-size:0.8em">(פעיל)</span>' : ''}
+                ${s.lastError ? `<div class="issue" style="margin-right:18px">${s.lastError}</div>` : ''}
+                ${s.lastCheck ? `<div style="font-size:0.8em;color:#484f58;margin-right:18px">בדיקה אחרונה: ${new Date(s.lastCheck).toLocaleTimeString('he-IL')}</div>` : ''}
+              </div>
+            `;
+          }
+        }
+
+        if (!activeSource) {
+          html += '<div class="issue" style="margin-top:8px">⚠ אין מקור פעיל — כל המקורות נכשלו!</div>';
+        }
+
+        if (d.lastAlertTime) {
+          html += `<div style="margin-top:8px;font-size:0.85em;color:#8b949e">התרעה אחרונה: ${new Date(d.lastAlertTime).toLocaleString('he-IL')}</div>`;
+        }
+        html += `<div style="font-size:0.85em;color:#484f58">סה"כ התרעות שהתקבלו: ${d.totalAlertsReceived || 0}</div>`;
+
+        el.innerHTML = html;
+      } catch (e) {
+        console.error('oref status error:', e);
+      }
+    }
+
+    // --- Live Alerts ---
+    async function loadLiveAlerts() {
+      try {
+        const res = await fetch('/api/oref/alerts');
+        const d = await res.json();
+        const el = document.getElementById('liveAlerts');
+        const alerts = d.alerts || [];
+        if (!alerts.length) {
+          el.innerHTML = '<div class="empty">אין התרעות פעילות כרגע</div>';
+          return;
+        }
+        el.innerHTML = alerts.map(a => {
+          const cities = a.cities || a.data || [];
+          const cityStr = Array.isArray(cities) ? cities.join(', ') : String(cities);
+          return `
+            <div class="alert-item">
+              <div class="alert-cities">${cityStr}</div>
+              <div class="alert-meta">
+                ${a.type ? `סוג: ${a.type}` : ''}
+                ${a.cat ? ` | קטגוריה: ${a.cat}` : ''}
+                ${a.title ? ` | ${a.title}` : ''}
+              </div>
+              ${a.instructions || a.desc ? `<div class="alert-meta">הנחיות: ${a.instructions || a.desc}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+        el.innerHTML += `<div style="font-size:0.8em;color:#484f58;margin-top:6px">מקור: ${d.activeSource || 'לא ידוע'}</div>`;
+      } catch (e) {
+        console.error('live alerts error:', e);
+      }
+    }
+
+    // --- Log Viewer ---
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/debug/logs?limit=300', { headers });
+        const d = await res.json();
+        allLogs = d.logs || [];
+        renderLogs();
+      } catch (e) {
+        console.error('load logs error:', e);
+      }
+    }
+
+    function renderLogs() {
+      const container = document.getElementById('logContainer');
+      const sourceFilter = document.getElementById('filterSource').value;
+      const levelFilter = document.getElementById('filterLevel').value;
+      const textFilter = document.getElementById('filterText').value.trim().toLowerCase();
+
+      let filtered = allLogs;
+      if (sourceFilter) filtered = filtered.filter(l => l.source === sourceFilter);
+      if (levelFilter) filtered = filtered.filter(l => l.level === levelFilter);
+      if (textFilter) filtered = filtered.filter(l => l.message.toLowerCase().includes(textFilter) || JSON.stringify(l.data || '').toLowerCase().includes(textFilter));
+
+      document.getElementById('logCount').textContent = `${filtered.length} רשומות`;
+
+      if (!filtered.length) {
+        container.innerHTML = '<div class="empty">אין לוגים עדיין — ממתין לאירועים...</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map((l, i) => {
+        const time = new Date(l.ts).toLocaleTimeString('he-IL', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const hasData = l.data && Object.keys(l.data).length > 0;
+        return `
+          <div class="log-entry">
+            <span class="log-ts">${time}</span>
+            <span class="log-source">${l.source}</span>
+            <span class="log-level ${l.level}">${l.level}</span>
+            <span class="log-msg">
+              ${escapeHtml(l.message)}
+              ${hasData ? `<span class="log-data-toggle" onclick="toggleData(this)">[פרטים]</span><div class="log-data">${escapeHtml(JSON.stringify(l.data, null, 2))}</div>` : ''}
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      if (autoScroll) {
+        container.scrollTop = 0;
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function toggleData(el) {
+      const dataDiv = el.nextElementSibling;
+      if (dataDiv.style.display === 'block') {
+        dataDiv.style.display = 'none';
+        el.textContent = '[פרטים]';
+      } else {
+        dataDiv.style.display = 'block';
+        el.textContent = '[הסתר]';
+      }
+    }
+
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      document.getElementById('autoScrollBtn').classList.toggle('active', autoScroll);
+    }
+
+    async function clearLogs() {
+      if (!confirm('לנקות את כל הלוגים?')) return;
+      await fetch('/api/debug/logs/clear', { method: 'POST', headers });
+      allLogs = [];
+      renderLogs();
+    }
+
+    // --- Real-time log via Socket.IO ---
+    socket.on('debug:log', (entry) => {
+      allLogs.unshift(entry);
+      if (allLogs.length > 500) allLogs.pop();
+      renderLogs();
+    });
+
+    // --- Filters ---
+    document.getElementById('filterSource').addEventListener('change', renderLogs);
+    document.getElementById('filterLevel').addEventListener('change', renderLogs);
+    document.getElementById('filterText').addEventListener('input', renderLogs);
+
+    // --- Refresh ---
+    function refreshAll() {
+      document.getElementById('refreshIndicator').textContent = 'מרענן...';
+      Promise.all([loadDiagnostic(), loadOrefStatus(), loadLiveAlerts(), loadLogs()]).then(() => {
+        document.getElementById('refreshIndicator').textContent = `עודכן ${new Date().toLocaleTimeString('he-IL')}`;
+      });
+    }
+
+    // --- Init ---
+    refreshAll();
+
+    // Auto-refresh every 5 seconds
+    setInterval(() => {
+      loadDiagnostic();
+      loadOrefStatus();
+      loadLiveAlerts();
+    }, 5000);
+
+    // WhatsApp status via socket
+    socket.on('whatsapp:status', (d) => {
+      loadDiagnostic();
+    });
+  </script>
+</body>
+</html>

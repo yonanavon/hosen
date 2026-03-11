@@ -1,6 +1,7 @@
 const QRCode = require('qrcode');
 const { usePrismaAuthState } = require('./whatsapp-auth-store');
 const { getIO } = require('../socket');
+const debug = require('./debug-log');
 
 class WhatsAppService {
   constructor() {
@@ -48,6 +49,7 @@ class WhatsAppService {
           this.currentQR = null;
           const statusCode = lastDisconnect?.error?.output?.statusCode;
           const errorMsg = lastDisconnect?.error?.message || 'unknown';
+          debug.log('WhatsApp', 'warn', `חיבור נסגר — קוד: ${statusCode}, שגיאה: "${errorMsg}"`, { statusCode, errorMsg });
           console.log(`[WA] Connection closed — statusCode=${statusCode}, error="${errorMsg}"`);
 
           if (statusCode === DisconnectReason.loggedOut) {
@@ -76,6 +78,7 @@ class WhatsAppService {
           this.currentQR = null;
           this.reconnectAttempts = 0;
           this._emitStatus();
+          debug.log('WhatsApp', 'info', 'WhatsApp מחובר בהצלחה');
           console.log('[WA] Connected successfully');
         }
       });
@@ -125,9 +128,11 @@ class WhatsAppService {
 
   async sendSticker(jid, buffer) {
     if (!this.socket || this.status !== 'connected') {
+      debug.log('WhatsApp', 'error', `ניסיון שליחת סטיקר נכשל — WhatsApp לא מחובר (status=${this.status})`, { jid, status: this.status });
       throw new Error('WhatsApp not connected');
     }
     await this.socket.sendMessage(jid, { sticker: buffer });
+    debug.log('WhatsApp', 'send', `סטיקר נשלח בהצלחה לקבוצה ${jid}`, { jid });
   }
 
   async getGroups() {

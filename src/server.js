@@ -26,12 +26,17 @@ app.get('/dashboard', (_req, res) => {
   res.sendFile(path.join(__dirname, 'pages', 'dashboard.html'));
 });
 
+app.get('/debug', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'pages', 'debug.html'));
+});
+
 // --- API Routes ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/stickers', require('./routes/stickers'));
 app.use('/api/config', require('./routes/config'));
 app.use('/api/alerts', require('./routes/alerts'));
+app.use('/api/debug', require('./routes/debug'));
 
 // --- Public endpoints (no auth, for monitoring) ---
 const orefClient = new OrefClient();

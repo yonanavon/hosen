@@ -9,6 +9,7 @@
 
 const { EventEmitter } = require('events');
 const pikudHaoref = require('pikud-haoref-api');
+const debug = require('./services/debug-log');
 
 const OREF_BASE = 'https://www.oref.org.il';
 
@@ -86,6 +87,7 @@ class OrefClient extends EventEmitter {
       if (!res.ok) {
         stat.ok = false;
         stat.lastError = `HTTP ${res.status}`;
+        debug.log('OrefClient', 'warn', `מקור "${source.name}" החזיר HTTP ${res.status}`, { source: source.name, status: res.status });
         return null;
       }
 
@@ -104,6 +106,7 @@ class OrefClient extends EventEmitter {
       stat.lastCheck = now;
       stat.ok = false;
       stat.lastError = err.message;
+      debug.log('OrefClient', 'error', `שגיאה בגישה למקור "${source.name}": ${err.message}`, { source: source.name, error: err.message });
       return null;
     }
   }
@@ -163,6 +166,7 @@ class OrefClient extends EventEmitter {
       return npmResult;
     }
 
+    debug.log('OrefClient', 'error', 'כל המקורות נכשלו — לא ניתן לקבל התרעות', { sources: Object.keys(this.status.sources) });
     this.status.activeSources.realtime = null;
     return [];
   }
