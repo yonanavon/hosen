@@ -1,0 +1,16 @@
+{
+  "name": "hosen-oref-alerts",
+  "version": "1.0.0",
+  "description": "Pikud HaOref (Home Front Command) alert system - Railway deployment test",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
