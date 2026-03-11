@@ -160,7 +160,10 @@
       document.getElementById('qrCard').style.display = status === 'qr' ? 'block' : 'none';
     }
 
-    socket.on('whatsapp:status', (d) => updateWaStatus(d.status));
+    socket.on('whatsapp:status', (d) => {
+      updateWaStatus(d.status);
+      if (d.status === 'connected') loadGroups();
+    });
     socket.on('whatsapp:qr', (d) => {
       document.getElementById('qrImage').src = d.qr;
       document.getElementById('qrCard').style.display = 'block';
@@ -235,13 +238,20 @@
 
     // --- Config ---
     async function loadGroups() {
+      const sel = document.getElementById('cfgGroup');
       try {
         const res = await fetch('/api/whatsapp/groups', { headers });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          sel.innerHTML = '<option value="">WhatsApp לא מחובר</option>';
+          return;
+        }
         const { groups } = await res.json();
-        const sel = document.getElementById('cfgGroup');
         sel.innerHTML = '<option value="">בחר קבוצה</option>' +
           groups.map(g => `<option value="${g.jid}">${g.subject} (${g.participants})</option>`).join('');
-      } catch { /* WA not connected yet */ }
+      } catch {
+        sel.innerHTML = '<option value="">שגיאה בטעינת קבוצות</option>';
+      }
     }
 
     async function loadConfigs() {
