@@ -5,6 +5,51 @@ const { prisma } = require('../lib/prisma');
 const router = Router();
 router.use(authMiddleware);
 
+// Cached cities list from Pikud HaOref
+let citiesCache = null;
+let citiesCacheTime = 0;
+const CITIES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+const CITIES_URLS = [
+  'https://alerts-history.oref.org.il/Shared/Ajax/GetCitiesMix.aspx?lang=he',
+  'https://www.oref.org.il/districts/cities_heb.json',
+];
+
+async function fetchCities() {
+  if (citiesCache && Date.now() - citiesCacheTime < CITIES_CACHE_TTL) {
+    return citiesCache;
+  }
+  for (const url of CITIES_URLS) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'Referer': 'https://www.oref.org.il/', 'X-Requested-With': 'XMLHttpRequest' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      citiesCache = data.map((c) => ({
+        label: c.label_he || c.label,
+        area: (c.mixname || '').replace(/<[^>]*>/g, '').replace(c.label_he || c.label, '').replace('|', '').trim(),
+        migunTime: c.migun_time,
+      }));
+      citiesCacheTime = Date.now();
+      console.log(`[Config] Loaded ${citiesCache.length} cities from ${url}`);
+      return citiesCache;
+    } catch { /* try next */ }
+  }
+  return citiesCache || [];
+}
+
+// Get cities list for autocomplete
+router.get('/cities', async (_req, res) => {
+  try {
+    const cities = await fetchCities();
+    res.json({ cities });
+  } catch (error) {
+    res.status(500).json({ error: 'שגיאה בטעינת ערים' });
+  }
+});
+
 // List all alert configs with their mappings
 router.get('/', async (_req, res) => {
   try {

@@ -48,6 +48,11 @@
     .log-time { color: #64748b; }
     .error-msg { color: #f87171; margin-top: 8px; }
     .empty { color: #64748b; text-align: center; padding: 20px; }
+    .city-tag { display: inline-flex; align-items: center; gap: 4px; background: #334155; color: #e2e8f0; padding: 3px 8px; border-radius: 12px; font-size: 0.8em; }
+    .city-tag .remove { cursor: pointer; color: #f87171; font-weight: bold; margin-right: 2px; }
+    .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 0.9em; border-bottom: 1px solid #334155; }
+    .suggestion-item:hover, .suggestion-item.active { background: #334155; }
+    .suggestion-item .area { color: #64748b; font-size: 0.8em; }
   </style>
 </head>
 <body>
@@ -101,9 +106,12 @@
           <label>שם</label>
           <input type="text" id="cfgName" placeholder="למשל: צפת">
         </div>
-        <div class="form-group">
-          <label>ערים (מופרד בפסיקים)</label>
-          <input type="text" id="cfgCities" placeholder="צפת - העיר, צפת - כנען">
+        <div class="form-group" style="position:relative">
+          <label>ערים</label>
+          <div id="selectedCities" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>
+          <input type="text" id="cfgCitiesInput" placeholder="הקלד שם עיר..." autocomplete="off">
+          <div id="citySuggestions" style="display:none;position:absolute;z-index:100;background:#1e293b;border:1px solid #334155;border-radius:8px;max-height:200px;overflow-y:auto;width:100%;top:100%"></div>
+          <input type="hidden" id="cfgCities">
         </div>
         <div class="form-group">
           <label>קבוצת וואטסאפ</label>
@@ -236,6 +244,76 @@
       loadSaved();
     }
 
+    // --- Cities Autocomplete ---
+    let allCities = [];
+    const selectedCitiesList = [];
+
+    async function loadCities() {
+      try {
+        const res = await fetch('/api/config/cities', { headers });
+        const { cities } = await res.json();
+        allCities = cities;
+        console.log('Loaded', cities.length, 'cities');
+      } catch { /* ignore */ }
+    }
+    loadCities();
+
+    function renderSelectedCities() {
+      const container = document.getElementById('selectedCities');
+      container.innerHTML = selectedCitiesList.map((c, i) =>
+        `<span class="city-tag">${c}<span class="remove" onclick="removeCity(${i})">×</span></span>`
+      ).join('');
+      document.getElementById('cfgCities').value = selectedCitiesList.join(', ');
+    }
+
+    function removeCity(index) {
+      selectedCitiesList.splice(index, 1);
+      renderSelectedCities();
+    }
+
+    function addCity(name) {
+      if (!selectedCitiesList.includes(name)) {
+        selectedCitiesList.push(name);
+        renderSelectedCities();
+      }
+      document.getElementById('cfgCitiesInput').value = '';
+      document.getElementById('citySuggestions').style.display = 'none';
+    }
+
+    const citiesInput = document.getElementById('cfgCitiesInput');
+    const suggestionsEl = document.getElementById('citySuggestions');
+    let activeSuggestion = -1;
+
+    citiesInput.addEventListener('input', () => {
+      const q = citiesInput.value.trim();
+      if (q.length < 1) { suggestionsEl.style.display = 'none'; return; }
+      const matches = allCities.filter(c =>
+        c.label.includes(q) && !selectedCitiesList.includes(c.label)
+      ).slice(0, 15);
+      if (!matches.length) { suggestionsEl.style.display = 'none'; return; }
+      activeSuggestion = -1;
+      suggestionsEl.innerHTML = matches.map((c, i) =>
+        `<div class="suggestion-item" data-index="${i}" onclick="addCity('${c.label.replace(/'/g, "\\'")}')">${c.label}${c.area ? ` <span class="area">${c.area}</span>` : ''}</div>`
+      ).join('');
+      suggestionsEl.style.display = 'block';
+    });
+
+    citiesInput.addEventListener('keydown', (e) => {
+      const items = suggestionsEl.querySelectorAll('.suggestion-item');
+      if (!items.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeSuggestion = Math.min(activeSuggestion + 1, items.length - 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeSuggestion = Math.max(activeSuggestion - 1, 0); }
+      else if (e.key === 'Enter' && activeSuggestion >= 0) { e.preventDefault(); items[activeSuggestion].click(); return; }
+      else return;
+      items.forEach((it, i) => it.classList.toggle('active', i === activeSuggestion));
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#cfgCitiesInput') && !e.target.closest('#citySuggestions')) {
+        suggestionsEl.style.display = 'none';
+      }
+    });
+
     // --- Config ---
     async function loadGroups() {
       const sel = document.getElementById('cfgGroup');
@@ -301,16 +379,17 @@
 
     async function createConfig() {
       const name = document.getElementById('cfgName').value.trim();
-      const cities = document.getElementById('cfgCities').value.trim();
+      const cities = selectedCitiesList.join(', ');
       const groupJid = document.getElementById('cfgGroup').value;
-      if (!name || !cities || !groupJid) return alert('מלא את כל השדות');
+      if (!name || !selectedCitiesList.length || !groupJid) return alert('מלא את כל השדות (כולל בחירת ערים)');
       const res = await fetch('/api/config', {
         method: 'POST', headers,
         body: JSON.stringify({ name, cities, groupJid }),
       });
       if (!res.ok) { const d = await res.json(); return alert(d.error); }
       document.getElementById('cfgName').value = '';
-      document.getElementById('cfgCities').value = '';
+      selectedCitiesList.length = 0;
+      renderSelectedCities();
       loadConfigs();
     }
 
