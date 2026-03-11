@@ -1,18 +1,17 @@
 /**
  * Pikud HaOref (Home Front Command) Alert API Client
  *
- * Endpoints:
- *   - Real-time alerts: /WarningMessages/alert/alerts.json
- *   - Alert history:    /WarningMessages/History/AlertsHistory.json
- *
- * NOTE: The oref.org.il API geo-blocks non-Israeli IPs.
- *       This client tracks connection status so we can diagnose
- *       whether Railway's servers can reach the API.
+ * Multi-source strategy to bypass geo-blocking:
+ *   1. Direct oref.org.il (works only from Israeli IPs)
+ *   2. pikud-haoref-api npm package (with optional proxy)
+ *   3. Publicly available alert proxy APIs
  */
 
-const BASE_URL = 'https://www.oref.org.il';
+const pikudHaoref = require('pikud-haoref-api');
 
-const HEADERS = {
+const OREF_BASE = 'https://www.oref.org.il';
+
+const OREF_HEADERS = {
   'Referer': 'https://www.oref.org.il/',
   'X-Requested-With': 'XMLHttpRequest',
   'Accept': 'application/json',
@@ -20,95 +19,174 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 };
 
+// Alternative public proxy APIs that mirror oref data from Israeli servers
+const PROXY_SOURCES = [
+  {
+    name: 'Tzeva Adom (alerts)',
+    url: 'https://api.tzevaadom.co.il/notifications',
+    type: 'realtime'
+  },
+  {
+    name: 'Oref Direct (alerts)',
+    url: `${OREF_BASE}/WarningMessages/alert/alerts.json`,
+    headers: OREF_HEADERS,
+    type: 'realtime'
+  },
+  {
+    name: 'Oref Direct (history)',
+    url: `${OREF_BASE}/WarningMessages/History/AlertsHistory.json`,
+    headers: OREF_HEADERS,
+    type: 'history'
+  }
+];
+
 class OrefClient {
-  constructor() {
+  constructor(options = {}) {
     this.lastAlerts = [];
     this.lastHistory = [];
+    this.activeSource = null;
+    this.proxyUrl = options.proxy || process.env.OREF_PROXY || null;
+
     this.status = {
-      realtime: { ok: false, lastCheck: null, lastError: null, httpStatus: null },
-      history:  { ok: false, lastCheck: null, lastError: null, httpStatus: null }
+      sources: {},
+      activeSources: { realtime: null, history: null },
+      lastAlertTime: null,
+      totalAlertsReceived: 0
     };
+
     this.pollInterval = null;
+
+    // Initialize status for each source
+    for (const src of PROXY_SOURCES) {
+      this.status.sources[src.name] = {
+        ok: false, lastCheck: null, lastError: null, httpStatus: null, type: src.type
+      };
+    }
+    this.status.sources['pikud-haoref-api (npm)'] = {
+      ok: false, lastCheck: null, lastError: null, httpStatus: null, type: 'realtime'
+    };
   }
 
-  async fetchAlerts() {
-    const url = `${BASE_URL}/WarningMessages/alert/alerts.json`;
+  // Try fetching from a URL source
+  async _fetchSource(source) {
     const now = new Date().toISOString();
+    const stat = this.status.sources[source.name];
 
     try {
-      const res = await fetch(url, {
-        headers: HEADERS,
-        signal: AbortSignal.timeout(10000)
+      const res = await fetch(source.url, {
+        headers: source.headers || { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000)
       });
 
-      this.status.realtime.httpStatus = res.status;
-      this.status.realtime.lastCheck = now;
+      stat.httpStatus = res.status;
+      stat.lastCheck = now;
 
       if (!res.ok) {
-        this.status.realtime.ok = false;
-        this.status.realtime.lastError = `HTTP ${res.status}`;
-        return [];
+        stat.ok = false;
+        stat.lastError = `HTTP ${res.status}`;
+        return null;
       }
 
       const text = await res.text();
-      // The endpoint returns empty string when there are no active alerts
-      if (!text || text.trim() === '') {
-        this.status.realtime.ok = true;
-        this.status.realtime.lastError = null;
-        this.lastAlerts = [];
-        return [];
+      if (!text || text.trim() === '' || text.trim() === '[]') {
+        stat.ok = true;
+        stat.lastError = null;
+        return []; // No active alerts - this is a valid response
       }
 
       const data = JSON.parse(text);
-      this.status.realtime.ok = true;
-      this.status.realtime.lastError = null;
-      this.lastAlerts = Array.isArray(data) ? data : [data];
-      return this.lastAlerts;
+      stat.ok = true;
+      stat.lastError = null;
+      return Array.isArray(data) ? data : [data];
     } catch (err) {
-      this.status.realtime.lastCheck = now;
-      this.status.realtime.ok = false;
-      this.status.realtime.lastError = err.message;
-      return [];
+      stat.lastCheck = now;
+      stat.ok = false;
+      stat.lastError = err.message;
+      return null;
     }
   }
 
-  async fetchHistory() {
-    const url = `${BASE_URL}/WarningMessages/History/AlertsHistory.json`;
+  // Try the npm package (pikud-haoref-api)
+  async _fetchViaNpm() {
+    const stat = this.status.sources['pikud-haoref-api (npm)'];
     const now = new Date().toISOString();
+    stat.lastCheck = now;
 
-    try {
-      const res = await fetch(url, {
-        headers: HEADERS,
-        signal: AbortSignal.timeout(10000)
-      });
-
-      this.status.history.httpStatus = res.status;
-      this.status.history.lastCheck = now;
-
-      if (!res.ok) {
-        this.status.history.ok = false;
-        this.status.history.lastError = `HTTP ${res.status}`;
-        return [];
+    return new Promise((resolve) => {
+      const options = {};
+      if (this.proxyUrl) {
+        options.proxy = this.proxyUrl;
       }
 
-      const data = await res.json();
-      this.status.history.ok = true;
-      this.status.history.lastError = null;
-      this.lastHistory = Array.isArray(data) ? data : [data];
-      return this.lastHistory;
-    } catch (err) {
-      this.status.history.lastCheck = now;
-      this.status.history.ok = false;
-      this.status.history.lastError = err.message;
-      return [];
+      pikudHaoref.getActiveAlerts((err, alerts) => {
+        if (err) {
+          stat.ok = false;
+          stat.lastError = err.message || String(err);
+          resolve(null);
+        } else {
+          stat.ok = true;
+          stat.lastError = null;
+          stat.httpStatus = 200;
+          resolve(alerts || []);
+        }
+      }, options);
+    });
+  }
+
+  // Main fetch - tries all sources with fallback
+  async fetchAlerts() {
+    // Try each realtime source
+    for (const source of PROXY_SOURCES.filter(s => s.type === 'realtime')) {
+      const result = await this._fetchSource(source);
+      if (result !== null) {
+        this.status.activeSources.realtime = source.name;
+        this.lastAlerts = result;
+        if (result.length > 0) {
+          this.status.lastAlertTime = new Date().toISOString();
+          this.status.totalAlertsReceived += result.length;
+        }
+        return result;
+      }
     }
+
+    // Fallback to npm package
+    const npmResult = await this._fetchViaNpm();
+    if (npmResult !== null) {
+      this.status.activeSources.realtime = 'pikud-haoref-api (npm)';
+      this.lastAlerts = npmResult;
+      if (npmResult.length > 0) {
+        this.status.lastAlertTime = new Date().toISOString();
+        this.status.totalAlertsReceived += npmResult.length;
+      }
+      return npmResult;
+    }
+
+    this.status.activeSources.realtime = null;
+    return [];
+  }
+
+  async fetchHistory() {
+    for (const source of PROXY_SOURCES.filter(s => s.type === 'history')) {
+      const result = await this._fetchSource(source);
+      if (result !== null) {
+        this.status.activeSources.history = source.name;
+        this.lastHistory = result;
+        return result;
+      }
+    }
+
+    this.status.activeSources.history = null;
+    return [];
   }
 
   startPolling(intervalMs = 5000) {
     if (this.pollInterval) return;
-    console.log(`[OrefClient] Polling every ${intervalMs / 1000}s`);
+    console.log(`[OrefClient] Polling every ${intervalMs / 1000}s (multi-source fallback enabled)`);
+    if (this.proxyUrl) {
+      console.log(`[OrefClient] Using proxy: ${this.proxyUrl.replace(/\/\/.*@/, '//***@')}`);
+    }
     this.pollInterval = setInterval(() => this.fetchAlerts(), intervalMs);
-    this.fetchAlerts(); // immediate first check
+    this.fetchAlerts();
   }
 
   stopPolling() {
@@ -121,7 +199,8 @@ class OrefClient {
   getStatus() {
     return {
       ...this.status,
-      geoBlockNote: 'oref.org.il blocks non-Israeli IPs. If both endpoints show errors, the server IP is likely outside Israel.'
+      geoBlockNote: 'oref.org.il blocks non-Israeli IPs. The system tries multiple sources with automatic fallback.',
+      tip: 'Set OREF_PROXY env var to an Israeli HTTP proxy to enable direct API access from abroad.'
     };
   }
 }
