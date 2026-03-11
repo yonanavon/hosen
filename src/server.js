@@ -33,10 +33,10 @@ app.use('/api/stickers', require('./routes/stickers'));
 app.use('/api/config', require('./routes/config'));
 app.use('/api/alerts', require('./routes/alerts'));
 
-// --- Public alert endpoints (no auth, for monitoring) ---
+// --- Public endpoints (no auth, for monitoring) ---
 const orefClient = new OrefClient();
 
-app.get('/api/alerts', (_req, res) => {
+app.get('/api/oref/alerts', (_req, res) => {
   res.json({
     alerts: orefClient.lastAlerts,
     activeSource: orefClient.status.activeSources.realtime,

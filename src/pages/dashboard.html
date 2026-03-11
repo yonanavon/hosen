@@ -424,7 +424,7 @@
     // --- Monitor ---
     async function loadAlerts() {
       try {
-        const res = await fetch('/api/alerts', { headers: { 'Accept': 'application/json' } });
+        const res = await fetch('/api/oref/alerts');
         const data = await res.json();
         const el = document.getElementById('activeAlerts');
         const alerts = data.alerts || [];

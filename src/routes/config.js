@@ -25,8 +25,15 @@ async function fetchCities() {
         headers: { 'Referer': 'https://www.oref.org.il/', 'X-Requested-With': 'XMLHttpRequest' },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.log(`[Config] Cities fetch ${url} → HTTP ${res.status}`);
+        continue;
+      }
       const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        console.log(`[Config] Cities fetch ${url} → empty or invalid`);
+        continue;
+      }
       citiesCache = data.map((c) => ({
         label: c.label_he || c.label,
         area: (c.mixname || '').replace(/<[^>]*>/g, '').replace(c.label_he || c.label, '').replace('|', '').trim(),
@@ -35,7 +42,9 @@ async function fetchCities() {
       citiesCacheTime = Date.now();
       console.log(`[Config] Loaded ${citiesCache.length} cities from ${url}`);
       return citiesCache;
-    } catch { /* try next */ }
+    } catch (err) {
+      console.log(`[Config] Cities fetch ${url} → error: ${err.message}`);
+    }
   }
   return citiesCache || [];
 }
@@ -46,6 +55,7 @@ router.get('/cities', async (_req, res) => {
     const cities = await fetchCities();
     res.json({ cities });
   } catch (error) {
+    console.error('[Config] /cities route error:', error);
     res.status(500).json({ error: 'שגיאה בטעינת ערים' });
   }
 });
