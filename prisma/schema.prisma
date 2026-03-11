@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model WhatsappSession {
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_sessions")
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+model Sticker {
+  id       Int    @id @default(autoincrement())
+  tag      String @unique
+  buffer   String // base64 WebP
+  mimetype String @default("image/webp")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("stickers")
+}
+
+model AlertConfig {
+  id       Int     @id @default(autoincrement())
+  name     String
+  cities   String  // comma-separated city names
+  groupJid String
+  enabled  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mappings StickerMapping[]
+
+  @@map("alert_configs")
+}
+
+model StickerMapping {
+  id            Int    @id @default(autoincrement())
+  alertConfigId Int
+  phase         String // "enter", "stay", "leave"
+  stickerTag    String
+
+  alertConfig AlertConfig @relation(fields: [alertConfigId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([alertConfigId, phase])
+  @@map("sticker_mappings")
+}
+
+model AlertLog {
+  id            Int      @id @default(autoincrement())
+  alertConfigId Int?
+  phase         String
+  stickerTag    String
+  groupJid      String
+  cities        String
+  createdAt     DateTime @default(now())
+
+  @@map("alert_logs")
+}

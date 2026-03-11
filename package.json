@@ -1,17 +1,34 @@
 {
   "name": "hosen-oref-alerts",
-  "version": "1.0.0",
-  "description": "Pikud HaOref (Home Front Command) alert system - Railway deployment test",
+  "version": "2.0.0",
+  "description": "WhatsApp Alert Bot for Pikud HaOref - sends stickers to groups based on alerts",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "start": "npx prisma migrate deploy && node prisma/seed.js && node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:push": "npx prisma db push",
+    "db:seed": "node prisma/seed.js",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "baileys": "^6.7.16",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
     "express": "^4.21.0",
-    "pikud-haoref-api": "^5.0.3"
-  }
+    "jsonwebtoken": "^9.0.2",
+    "pikud-haoref-api": "^5.0.3",
+    "qrcode": "^1.5.4",
+    "prisma": "^6.5.0",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {}
+
 }

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>התחברות - Hosen</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { background: #1e293b; border-radius: 16px; padding: 40px; width: 100%; max-width: 400px; border: 1px solid #334155; }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 1.8em; }
+    .subtitle { text-align: center; color: #94a3b8; margin-bottom: 32px; }
+    label { display: block; margin-bottom: 6px; font-size: 0.9em; color: #94a3b8; }
+    input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 1em; margin-bottom: 20px; outline: none; }
+    input:focus { border-color: #3b82f6; }
+    button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #3b82f6; color: white; font-size: 1.05em; font-weight: 600; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { color: #f87171; text-align: center; margin-top: 16px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>Hosen</h1>
+    <p class="subtitle">מערכת התרעות וואטסאפ</p>
+    <form id="loginForm">
+      <label for="username">שם משתמש</label>
+      <input type="text" id="username" name="username" required autocomplete="username">
+      <label for="password">סיסמה</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+      <button type="submit" id="submitBtn">התחבר</button>
+    </form>
+    <div class="error" id="error"></div>
+  </div>
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorEl = document.getElementById('error');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.style.display = 'none';
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'שגיאה');
+        }
+        localStorage.setItem('token', data.token);
+        window.location.href = '/dashboard';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    // If already logged in, redirect
+    if (localStorage.getItem('token')) {
+      window.location.href = '/dashboard';
+    }
+  </script>
+</body>
+</html>

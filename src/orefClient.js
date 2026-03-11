@@ -7,6 +7,7 @@
  *   3. Publicly available alert proxy APIs
  */
 
+const { EventEmitter } = require('events');
 const pikudHaoref = require('pikud-haoref-api');
 
 const OREF_BASE = 'https://www.oref.org.il';
@@ -40,8 +41,9 @@ const PROXY_SOURCES = [
   }
 ];
 
-class OrefClient {
+class OrefClient extends EventEmitter {
   constructor(options = {}) {
+    super();
     this.lastAlerts = [];
     this.lastHistory = [];
     this.activeSource = null;
@@ -185,8 +187,11 @@ class OrefClient {
     if (this.proxyUrl) {
       console.log(`[OrefClient] Using proxy: ${this.proxyUrl.replace(/\/\/.*@/, '//***@')}`);
     }
-    this.pollInterval = setInterval(() => this.fetchAlerts(), intervalMs);
-    this.fetchAlerts();
+    this.pollInterval = setInterval(async () => {
+      const alerts = await this.fetchAlerts();
+      this.emit('alerts', alerts);
+    }, intervalMs);
+    this.fetchAlerts().then((alerts) => this.emit('alerts', alerts));
   }
 
   stopPolling() {
