@@ -17,6 +17,17 @@ function getCities() {
   return citiesCache;
 }
 
+// Get alert types list
+router.get('/alert-types', (_req, res) => {
+  try {
+    const alertTypes = require('../data/alert-types.json');
+    res.json({ alertTypes });
+  } catch (error) {
+    console.error('[Config] /alert-types error:', error);
+    res.status(500).json({ error: 'שגיאה בטעינת סוגי התרעות' });
+  }
+});
+
 // Get cities list for autocomplete
 router.get('/cities', (_req, res) => {
   try {
@@ -87,18 +98,18 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/mappings', async (req, res) => {
   try {
     const alertConfigId = parseInt(req.params.id);
-    const { phase, stickerTag } = req.body;
-    if (!phase || !stickerTag) {
-      return res.status(400).json({ error: 'נדרש phase ו-stickerTag' });
+    const { alertType, phase, stickerTag } = req.body;
+    if (!alertType || !phase || !stickerTag) {
+      return res.status(400).json({ error: 'נדרש alertType, phase ו-stickerTag' });
     }
     if (!['enter', 'stay', 'leave'].includes(phase)) {
       return res.status(400).json({ error: 'phase חייב להיות enter, stay, או leave' });
     }
 
     const mapping = await prisma.stickerMapping.upsert({
-      where: { alertConfigId_phase: { alertConfigId, phase } },
+      where: { alertConfigId_alertType_phase: { alertConfigId, alertType, phase } },
       update: { stickerTag },
-      create: { alertConfigId, phase, stickerTag },
+      create: { alertConfigId, alertType, phase, stickerTag },
     });
     res.json({ mapping });
   } catch (error) {
@@ -108,12 +119,13 @@ router.post('/:id/mappings', async (req, res) => {
 });
 
 // Delete sticker mapping
-router.delete('/:id/mappings/:phase', async (req, res) => {
+router.delete('/:id/mappings/:alertType/:phase', async (req, res) => {
   try {
     const alertConfigId = parseInt(req.params.id);
+    const alertType = req.params.alertType;
     const phase = req.params.phase;
     await prisma.stickerMapping.delete({
-      where: { alertConfigId_phase: { alertConfigId, phase } },
+      where: { alertConfigId_alertType_phase: { alertConfigId, alertType, phase } },
     });
     res.json({ success: true });
   } catch (error) {

@@ -40,6 +40,13 @@
     .sticker-item { background: #0f172a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid #334155; }
     .sticker-item img { max-width: 100px; max-height: 100px; }
     .sticker-item .tag { font-size: 0.8em; margin-top: 6px; color: #94a3b8; }
+    .mapping-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .mapping-table th, .mapping-table td { padding: 6px 8px; text-align: right; border: 1px solid #334155; font-size: 0.8em; }
+    .mapping-table th { background: #0f172a; color: #94a3b8; font-weight: 600; }
+    .mapping-table td select { width: 100%; padding: 4px; font-size: 0.85em; }
+    .mapping-table tr:hover { background: #334155; }
+    .mapping-toggle { cursor: pointer; color: #3b82f6; font-size: 0.85em; margin-top: 8px; display: inline-block; }
+    .mapping-toggle:hover { text-decoration: underline; }
     .form-row { display: flex; gap: 10px; align-items: end; margin-bottom: 12px; flex-wrap: wrap; }
     .form-row label { font-size: 0.85em; color: #94a3b8; display: block; margin-bottom: 4px; }
     .form-group { flex: 1; min-width: 150px; }
@@ -323,6 +330,19 @@
       }
     });
 
+    // --- Alert Types ---
+    let allAlertTypes = [];
+    async function loadAlertTypes() {
+      try {
+        const res = await fetch('/api/config/alert-types', { headers });
+        const data = await res.json();
+        allAlertTypes = data.alertTypes || [];
+      } catch (e) {
+        console.error('loadAlertTypes error:', e);
+      }
+    }
+    loadAlertTypes();
+
     // --- Config ---
     async function loadGroups() {
       const sel = document.getElementById('cfgGroup');
@@ -351,32 +371,44 @@
       const { stickers } = await savedRes.json();
       const stickerTags = stickers.map(s => s.tag);
 
+      const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
+      const phases = ['enter', 'stay', 'leave'];
+
       el.innerHTML = configs.map(c => {
-        const mappingRows = ['enter', 'stay', 'leave'].map(phase => {
-          const mapping = c.mappings.find(m => m.phase === phase);
-          const labels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
-          return `
-            <div style="display:flex;align-items:center;gap:8px;margin:4px 0">
-              <span style="width:60px;font-size:0.85em">${labels[phase]}:</span>
-              <select onchange="setMapping(${c.id},'${phase}',this.value)" style="font-size:0.85em">
-                <option value="">-- ללא --</option>
-                ${stickerTags.map(t => `<option value="${t}" ${mapping?.stickerTag === t ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>
-            </div>
-          `;
+        // Count configured mappings
+        const mappingCount = c.mappings.length;
+
+        // Build the mapping table (hidden by default to keep UI clean)
+        const tableRows = allAlertTypes.map(at => {
+          const cells = phases.map(phase => {
+            const mapping = c.mappings.find(m => m.alertType === at.type && m.phase === phase);
+            const opts = stickerTags.map(t =>
+              `<option value="${t}" ${mapping?.stickerTag === t ? 'selected' : ''}>${t}</option>`
+            ).join('');
+            return `<td><select onchange="setMapping(${c.id},'${at.type}','${phase}',this.value)"><option value="">--</option>${opts}</select></td>`;
+          }).join('');
+          return `<tr><td style="white-space:nowrap">${at.label}</td>${cells}</tr>`;
         }).join('');
+
+        const tableHtml = `
+          <table class="mapping-table">
+            <thead><tr><th>סוג אירוע</th>${phases.map(p => `<th>${phaseLabels[p]}</th>`).join('')}</tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        `;
 
         return `
           <div class="card" style="margin-bottom:8px;padding:14px">
             <div style="display:flex;justify-content:space-between;align-items:start">
-              <div>
+              <div style="flex:1">
                 <strong>${c.name}</strong>
                 <span class="badge ${c.enabled ? 'connected' : 'disconnected'}" style="margin-right:8px">${c.enabled ? 'פעיל' : 'מושבת'}</span>
                 <div style="font-size:0.85em;color:#94a3b8;margin-top:4px">ערים: ${c.cities}</div>
                 <div style="font-size:0.85em;color:#94a3b8">קבוצה: ${c.groupJid}</div>
-                <div style="margin-top:8px">${mappingRows}</div>
+                <span class="mapping-toggle" onclick="toggleMappings(this)">${mappingCount ? `שיוך מדבקות (${mappingCount} מוגדרים) ▼` : 'שיוך מדבקות ▼'}</span>
+                <div class="mapping-content" style="display:none">${tableHtml}</div>
               </div>
-              <div>
+              <div style="flex-shrink:0">
                 <button class="action btn-blue" style="padding:4px 10px;font-size:0.8em" onclick="toggleConfig(${c.id},${!c.enabled})">${c.enabled ? 'השבת' : 'הפעל'}</button>
                 <button class="action btn-red" style="padding:4px 10px;font-size:0.8em" onclick="deleteConfig(${c.id})">מחק</button>
               </div>
@@ -384,6 +416,17 @@
           </div>
         `;
       }).join('');
+    }
+
+    function toggleMappings(el) {
+      const content = el.nextElementSibling;
+      if (content.style.display === 'none') {
+        content.style.display = 'block';
+        el.textContent = el.textContent.replace('▼', '▲');
+      } else {
+        content.style.display = 'none';
+        el.textContent = el.textContent.replace('▲', '▼');
+      }
     }
 
     async function createConfig() {
@@ -413,13 +456,13 @@
       loadConfigs();
     }
 
-    async function setMapping(configId, phase, stickerTag) {
+    async function setMapping(configId, alertType, phase, stickerTag) {
       if (!stickerTag) {
-        await fetch(`/api/config/${configId}/mappings/${phase}`, { method: 'DELETE', headers });
+        await fetch(`/api/config/${configId}/mappings/${encodeURIComponent(alertType)}/${phase}`, { method: 'DELETE', headers });
       } else {
         await fetch(`/api/config/${configId}/mappings`, {
           method: 'POST', headers,
-          body: JSON.stringify({ phase, stickerTag }),
+          body: JSON.stringify({ alertType, phase, stickerTag }),
         });
       }
     }

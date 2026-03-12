@@ -45,14 +45,11 @@ router.get('/diagnostic', async (_req, res) => {
       if (!c.enabled) issues.push('ההגדרה מושבתת');
       if (!c.cities || !c.cities.trim()) issues.push('לא הוגדרו ערים');
       if (!c.groupJid) issues.push('לא הוגדרה קבוצת וואטסאפ');
+      if (!c.mappings.length) issues.push('לא הוגדרו מיפויי סטיקרים לאף סוג אירוע');
 
-      const phases = ['enter', 'stay', 'leave'];
-      for (const phase of phases) {
-        const mapping = c.mappings.find((m) => m.phase === phase);
-        if (!mapping) {
-          issues.push(`חסר מיפוי סטיקר לפאזה "${phase}"`);
-        } else if (!stickerTags.has(mapping.stickerTag)) {
-          issues.push(`סטיקר "${mapping.stickerTag}" (${phase}) לא נמצא בDB`);
+      for (const m of c.mappings) {
+        if (!stickerTags.has(m.stickerTag)) {
+          issues.push(`סטיקר "${m.stickerTag}" (${m.alertType}/${m.phase}) לא נמצא בDB`);
         }
       }
 
@@ -63,6 +60,7 @@ router.get('/diagnostic', async (_req, res) => {
         cities: c.cities,
         groupJid: c.groupJid,
         mappings: c.mappings.map((m) => ({
+          alertType: m.alertType,
           phase: m.phase,
           stickerTag: m.stickerTag,
           stickerExists: stickerTags.has(m.stickerTag),

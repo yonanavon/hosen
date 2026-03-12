@@ -196,21 +196,29 @@
         el.innerHTML = '<div class="empty">אין הגדרות התרעה — צור הגדרה בלוח הבקרה</div>';
         return;
       }
+      const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
+
       el.innerHTML = configs.map(c => {
-        const st = states[c.id];
-        const stateLabel = st ? st.state : 'IDLE';
-        const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
+        // Collect active states for this config (key format: "configId:alertType")
+        const activeStates = [];
+        for (const [key, st] of Object.entries(states)) {
+          if (key.startsWith(c.id + ':') && st.state !== 'IDLE') {
+            const alertType = key.slice(`${c.id}:`.length);
+            activeStates.push({ alertType, ...st });
+          }
+        }
+
         const mappingsHtml = c.mappings.map(m => `
           <div class="mapping-row">
-            ${phaseLabels[m.phase] || m.phase}: <strong>${m.stickerTag}</strong>
+            ${m.alertType}/${phaseLabels[m.phase] || m.phase}: <strong>${m.stickerTag}</strong>
             <span class="${m.stickerExists ? 'exists' : 'missing'}">${m.stickerExists ? '✓' : '✗ לא נמצא!'}</span>
           </div>
         `).join('');
 
-        const missingPhases = ['enter', 'stay', 'leave'].filter(p => !c.mappings.find(m => m.phase === p));
-        const missingHtml = missingPhases.map(p => `
-          <div class="mapping-row missing">
-            ${phaseLabels[p]}: <strong>לא מוגדר</strong>
+        const statesHtml = activeStates.map(s => `
+          <div style="margin-top:2px">
+            <span class="state-badge state-${s.state}">${s.alertType}: ${s.state}</span>
+            ${s.lastEnterTime ? `<span style="font-size:0.8em;color:#8b949e"> (כניסה: ${new Date(s.lastEnterTime).toLocaleTimeString('he-IL')})</span>` : ''}
           </div>
         `).join('');
 
@@ -221,12 +229,12 @@
                 <span class="dot ${c.ok ? 'green' : 'red'}"></span>
                 ${c.name} ${c.enabled ? '' : '<span style="color:#f85149">(מושבת)</span>'}
               </span>
-              <span class="state-badge state-${stateLabel}">${stateLabel}</span>
             </div>
             <div style="font-size:0.85em;color:#8b949e;margin-top:4px">ערים: ${c.cities}</div>
             <div style="font-size:0.85em;color:#8b949e">קבוצה: ${c.groupJid}</div>
-            ${st && st.lastEnterTime ? `<div style="font-size:0.85em;color:#8b949e">כניסה אחרונה: ${new Date(st.lastEnterTime).toLocaleString('he-IL')}</div>` : ''}
-            <div style="margin-top:6px">${mappingsHtml}${missingHtml}</div>
+            <div style="font-size:0.85em;color:#8b949e">מיפויים: ${c.mappings.length}</div>
+            ${activeStates.length ? `<div style="margin-top:6px">${statesHtml}</div>` : ''}
+            ${c.mappings.length ? `<div style="margin-top:6px">${mappingsHtml}</div>` : '<div class="mapping-row missing">אין מיפויי סטיקרים</div>'}
             ${c.issues.length ? c.issues.map(i => `<div class="issue">⚠ ${i}</div>`).join('') : '<div class="ok" style="font-size:0.85em;margin-top:4px">✓ הגדרה תקינה</div>'}
           </div>
         `;
