@@ -156,6 +156,18 @@
 
     const headers = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 
+    // Intercept all fetch calls — redirect to login on 401
+    const _origFetch = window.fetch;
+    window.fetch = async function (...args) {
+      const res = await _origFetch.apply(this, args);
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+        return res;
+      }
+      return res;
+    };
+
     // Socket.IO
     const socket = io({ auth: { token: TOKEN } });
 
