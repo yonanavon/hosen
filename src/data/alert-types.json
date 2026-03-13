@@ -1,18 +1,6 @@
 [
-  { "type": "missiles", "label": "ירי רקטות וטילים", "cat": 1 },
-  { "type": "hostileAircraftIntrusion", "label": "חדירת כלי טיס עוין", "cat": 6 },
-  { "type": "earthQuake", "label": "רעידת אדמה", "cat": 3 },
-  { "type": "radiologicalEvent", "label": "אירוע רדיולוגי", "cat": 4 },
-  { "type": "tsunami", "label": "צונאמי", "cat": 5 },
-  { "type": "hazardousMaterials", "label": "חומרים מסוכנים", "cat": 7 },
-  { "type": "terroristInfiltration", "label": "חדירת מחבלים", "cat": 13 },
-  { "type": "general", "label": "כללי", "cat": 2 },
-  { "type": "newsFlash", "label": "מבזק חדשות", "cat": 10 },
-  { "type": "missilesDrill", "label": "תרגיל ירי רקטות", "cat": 101 },
-  { "type": "earthQuakeDrill", "label": "תרגיל רעידת אדמה", "cat": 103 },
-  { "type": "radiologicalEventDrill", "label": "תרגיל אירוע רדיולוגי", "cat": 104 },
-  { "type": "tsunamiDrill", "label": "תרגיל צונאמי", "cat": 105 },
-  { "type": "hostileAircraftIntrusionDrill", "label": "תרגיל חדירת כלי טיס", "cat": 106 },
-  { "type": "hazardousMaterialsDrill", "label": "תרגיל חומרים מסוכנים", "cat": 107 },
-  { "type": "terroristInfiltrationDrill", "label": "תרגיל חדירת מחבלים", "cat": 113 }
+  { "key": "incoming", "cat": "10", "title": "בדקות הקרובות צפויות להתקבל התרעות באזורך", "label": "התכוננות (בדקות הקרובות)" },
+  { "key": "missiles", "cat": "1", "title": "ירי רקטות וטילים", "label": "ירי רקטות וטילים" },
+  { "key": "aircraft", "cat": "6", "title": "חדירת כלי טיס עוין", "label": "חדירת כלי טיס עוין" },
+  { "key": "resolved", "cat": "10", "title": "האירוע הסתיים", "label": "האירוע הסתיים" }
 ]

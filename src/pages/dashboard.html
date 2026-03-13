@@ -40,13 +40,6 @@
     .sticker-item { background: #0f172a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid #334155; }
     .sticker-item img { max-width: 100px; max-height: 100px; }
     .sticker-item .tag { font-size: 0.8em; margin-top: 6px; color: #94a3b8; }
-    .mapping-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .mapping-table th, .mapping-table td { padding: 6px 8px; text-align: right; border: 1px solid #334155; font-size: 0.8em; }
-    .mapping-table th { background: #0f172a; color: #94a3b8; font-weight: 600; }
-    .mapping-table td select { width: 100%; padding: 4px; font-size: 0.85em; }
-    .mapping-table tr:hover { background: #334155; }
-    .mapping-toggle { cursor: pointer; color: #3b82f6; font-size: 0.85em; margin-top: 8px; display: inline-block; }
-    .mapping-toggle:hover { text-decoration: underline; }
     .form-row { display: flex; gap: 10px; align-items: end; margin-bottom: 12px; flex-wrap: wrap; }
     .form-row label { font-size: 0.85em; color: #94a3b8; display: block; margin-bottom: 4px; }
     .form-group { flex: 1; min-width: 150px; }
@@ -356,7 +349,7 @@
     loadAlertTypes();
 
     // --- Config ---
-    async function loadGroups() {
+    function loadGroups() {
       const sel = document.getElementById('cfgGroup');
       try {
         const res = await fetch('/api/whatsapp/groups', { headers });
@@ -383,31 +376,22 @@
       const { stickers } = await savedRes.json();
       const stickerTags = stickers.map(s => s.tag);
 
-      const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
-      const phases = ['enter', 'stay', 'leave'];
-
       el.innerHTML = configs.map(c => {
-        // Count configured mappings
-        const mappingCount = c.mappings.length;
-
-        // Build the mapping table (hidden by default to keep UI clean)
-        const tableRows = allAlertTypes.map(at => {
-          const cells = phases.map(phase => {
-            const mapping = c.mappings.find(m => m.alertType === at.type && m.phase === phase);
-            const opts = stickerTags.map(t =>
-              `<option value="${t}" ${mapping?.stickerTag === t ? 'selected' : ''}>${t}</option>`
-            ).join('');
-            return `<td><select onchange="setMapping(${c.id},'${at.type}','${phase}',this.value)"><option value="">--</option>${opts}</select></td>`;
-          }).join('');
-          return `<tr><td style="white-space:nowrap">${at.label}</td>${cells}</tr>`;
+        const mappingRows = allAlertTypes.map(at => {
+          const mapping = c.mappings.find(m => m.alertType === at.key && m.phase === 'enter');
+          const opts = stickerTags.map(t =>
+            `<option value="${t}" ${mapping?.stickerTag === t ? 'selected' : ''}>${t}</option>`
+          ).join('');
+          return `
+            <div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+              <span style="width:200px;font-size:0.85em">${at.label}:</span>
+              <select onchange="setMapping(${c.id},'${at.key}','enter',this.value)" style="font-size:0.85em">
+                <option value="">-- ללא --</option>
+                ${opts}
+              </select>
+            </div>
+          `;
         }).join('');
-
-        const tableHtml = `
-          <table class="mapping-table">
-            <thead><tr><th>סוג אירוע</th>${phases.map(p => `<th>${phaseLabels[p]}</th>`).join('')}</tr></thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-        `;
 
         return `
           <div class="card" style="margin-bottom:8px;padding:14px">
@@ -417,8 +401,8 @@
                 <span class="badge ${c.enabled ? 'connected' : 'disconnected'}" style="margin-right:8px">${c.enabled ? 'פעיל' : 'מושבת'}</span>
                 <div style="font-size:0.85em;color:#94a3b8;margin-top:4px">ערים: ${c.cities}</div>
                 <div style="font-size:0.85em;color:#94a3b8">קבוצה: ${c.groupJid}</div>
-                <span class="mapping-toggle" onclick="toggleMappings(this)">${mappingCount ? `שיוך מדבקות (${mappingCount} מוגדרים) ▼` : 'שיוך מדבקות ▼'}</span>
-                <div class="mapping-content" style="display:none">${tableHtml}</div>
+                <div style="margin-top:8px"><strong style="font-size:0.9em">שיוך מדבקות:</strong></div>
+                ${mappingRows}
               </div>
               <div style="flex-shrink:0">
                 <button class="action btn-blue" style="padding:4px 10px;font-size:0.8em" onclick="toggleConfig(${c.id},${!c.enabled})">${c.enabled ? 'השבת' : 'הפעל'}</button>
@@ -428,17 +412,6 @@
           </div>
         `;
       }).join('');
-    }
-
-    function toggleMappings(el) {
-      const content = el.nextElementSibling;
-      if (content.style.display === 'none') {
-        content.style.display = 'block';
-        el.textContent = el.textContent.replace('▼', '▲');
-      } else {
-        content.style.display = 'none';
-        el.textContent = el.textContent.replace('▲', '▼');
-      }
     }
 
     async function createConfig() {
@@ -485,15 +458,16 @@
         const res = await fetch('/api/oref/alerts');
         const data = await res.json();
         const el = document.getElementById('activeAlerts');
-        const alerts = data.alerts || [];
-        if (!alerts.length) { el.innerHTML = '<div class="empty">אין התרעות פעילות</div>'; return; }
-        el.innerHTML = alerts.map(a => `
+        const alert = data.alert;
+        if (!alert) { el.innerHTML = '<div class="empty">אין התרעות פעילות</div>'; return; }
+        const cities = alert.data || [];
+        const cityStr = Array.isArray(cities) ? cities.join(', ') : String(cities);
+        el.innerHTML = `
           <div class="log-entry">
-            <strong>${(a.cities || a.data || [a.title || '']).toString()}</strong>
-            ${a.type ? ` - ${a.type}` : ''}
-            ${a.instructions ? `<div style="font-size:0.85em;color:#94a3b8">${a.instructions}</div>` : ''}
+            <strong>${cityStr}</strong>
+            <div style="font-size:0.85em;color:#94a3b8">cat: ${alert.cat || '?'} | ${alert.title || ''}</div>
           </div>
-        `).join('');
+        `;
       } catch { /* ignore */ }
     }
 

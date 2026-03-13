@@ -7,7 +7,7 @@ const { Server: IOServer } = require('socket.io');
 const { setIO } = require('./socket');
 const { OrefClient } = require('./orefClient');
 const { getWhatsAppService } = require('./services/whatsapp.service');
-const { processAlerts } = require('./services/alert-processor');
+const { processAlert } = require('./services/alert-processor');
 const { addPending } = require('./services/sticker.service');
 
 const app = express();
@@ -42,10 +42,7 @@ app.use('/api/debug', require('./routes/debug'));
 const orefClient = new OrefClient();
 
 app.get('/api/oref/alerts', (_req, res) => {
-  res.json({
-    alerts: orefClient.lastAlerts,
-    activeSource: orefClient.status.activeSources.realtime,
-  });
+  res.json({ alert: orefClient.lastAlert });
 });
 
 app.get('/api/status', (_req, res) => {
@@ -73,8 +70,8 @@ io.emit = function (event, ...args) {
 
 // --- Start alert polling + processing ---
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || '3000', 10);
-orefClient.on('alerts', (alerts) => {
-  processAlerts(alerts).catch((err) =>
+orefClient.on('alert', (alert) => {
+  processAlert(alert).catch((err) =>
     console.error('[AlertProcessor] Error:', err)
   );
 });

@@ -3,7 +3,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { prisma } = require('../lib/prisma');
 const debug = require('../services/debug-log');
 const { getWhatsAppService } = require('../services/whatsapp.service');
-const { getConfigStates } = require('../services/alert-processor');
+const { getLastSentTimes } = require('../services/alert-processor');
 
 const router = Router();
 router.use(authMiddleware);
@@ -77,7 +77,7 @@ router.get('/diagnostic', async (_req, res) => {
       },
       configs: configDiagnostics,
       stickers: stickers.map((s) => s.tag),
-      configStates: getConfigStates(),
+      lastSentTimes: getLastSentTimes(),
       totalConfigs: configs.length,
       enabledConfigs: configs.filter((c) => c.enabled).length,
     });

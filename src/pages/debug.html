@@ -183,7 +183,7 @@
         const res = await fetch('/api/debug/diagnostic', { headers });
         const d = await res.json();
         renderWaStatus(d.whatsapp);
-        renderConfigDiag(d.configs, d.configStates);
+        renderConfigDiag(d.configs, d.lastSentTimes || {});
       } catch (e) {
         console.error('diagnostic error:', e);
       }
@@ -202,35 +202,19 @@
       `;
     }
 
-    function renderConfigDiag(configs, states) {
+    function renderConfigDiag(configs, lastSentTimes) {
       const el = document.getElementById('configDiag');
       if (!configs.length) {
         el.innerHTML = '<div class="empty">אין הגדרות התרעה — צור הגדרה בלוח הבקרה</div>';
         return;
       }
-      const phaseLabels = { enter: 'כניסה', stay: 'הישארות', leave: 'יציאה' };
 
       el.innerHTML = configs.map(c => {
-        // Collect active states for this config (key format: "configId:alertType")
-        const activeStates = [];
-        for (const [key, st] of Object.entries(states)) {
-          if (key.startsWith(c.id + ':') && st.state !== 'IDLE') {
-            const alertType = key.slice(`${c.id}:`.length);
-            activeStates.push({ alertType, ...st });
-          }
-        }
-
         const mappingsHtml = c.mappings.map(m => `
           <div class="mapping-row">
-            ${m.alertType}/${phaseLabels[m.phase] || m.phase}: <strong>${m.stickerTag}</strong>
+            ${m.alertType}: <strong>${m.stickerTag}</strong>
             <span class="${m.stickerExists ? 'exists' : 'missing'}">${m.stickerExists ? '✓' : '✗ לא נמצא!'}</span>
-          </div>
-        `).join('');
-
-        const statesHtml = activeStates.map(s => `
-          <div style="margin-top:2px">
-            <span class="state-badge state-${s.state}">${s.alertType}: ${s.state}</span>
-            ${s.lastEnterTime ? `<span style="font-size:0.8em;color:#8b949e"> (כניסה: ${new Date(s.lastEnterTime).toLocaleTimeString('he-IL')})</span>` : ''}
+            ${lastSentTimes[c.id + ':' + m.alertType] ? `<span style="font-size:0.8em;color:#8b949e"> (נשלח: ${new Date(lastSentTimes[c.id + ':' + m.alertType]).toLocaleTimeString('he-IL')})</span>` : ''}
           </div>
         `).join('');
 
@@ -244,8 +228,6 @@
             </div>
             <div style="font-size:0.85em;color:#8b949e;margin-top:4px">ערים: ${c.cities}</div>
             <div style="font-size:0.85em;color:#8b949e">קבוצה: ${c.groupJid}</div>
-            <div style="font-size:0.85em;color:#8b949e">מיפויים: ${c.mappings.length}</div>
-            ${activeStates.length ? `<div style="margin-top:6px">${statesHtml}</div>` : ''}
             ${c.mappings.length ? `<div style="margin-top:6px">${mappingsHtml}</div>` : '<div class="mapping-row missing">אין מיפויי סטיקרים</div>'}
             ${c.issues.length ? c.issues.map(i => `<div class="issue">⚠ ${i}</div>`).join('') : '<div class="ok" style="font-size:0.85em;margin-top:4px">✓ הגדרה תקינה</div>'}
           </div>
@@ -259,34 +241,19 @@
         const res = await fetch('/api/status');
         const d = await res.json();
         const el = document.getElementById('orefStatus');
-        const activeSource = d.activeSources?.realtime;
 
-        let html = '';
-        if (d.sources) {
-          for (const [name, s] of Object.entries(d.sources)) {
-            if (s.type !== 'realtime') continue;
-            const isActive = name === activeSource;
-            const dotClass = s.ok ? (isActive ? 'green' : 'gray') : 'red';
-            html += `
-              <div class="oref-source">
-                <span class="dot ${dotClass}"></span>
-                <span class="name">${name}</span>
-                ${isActive ? '<span style="color:#3fb950;font-size:0.8em">(פעיל)</span>' : ''}
-                ${s.lastError ? `<div class="issue" style="margin-right:18px">${s.lastError}</div>` : ''}
-                ${s.lastCheck ? `<div style="font-size:0.8em;color:#484f58;margin-right:18px">בדיקה אחרונה: ${new Date(s.lastCheck).toLocaleTimeString('he-IL')}</div>` : ''}
-              </div>
-            `;
-          }
-        }
-
-        if (!activeSource) {
-          html += '<div class="issue" style="margin-top:8px">⚠ אין מקור פעיל — כל המקורות נכשלו!</div>';
-        }
-
-        if (d.lastAlertTime) {
-          html += `<div style="margin-top:8px;font-size:0.85em;color:#8b949e">התרעה אחרונה: ${new Date(d.lastAlertTime).toLocaleString('he-IL')}</div>`;
-        }
-        html += `<div style="font-size:0.85em;color:#484f58">סה"כ התרעות שהתקבלו: ${d.totalAlertsReceived || 0}</div>`;
+        const dotClass = d.ok ? 'green' : 'red';
+        let html = `
+          <div class="status-row">
+            <span class="dot ${dotClass}"></span>
+            <strong>oref.org.il ישיר</strong> — ${d.ok ? 'מחובר' : 'לא מחובר'}
+          </div>
+        `;
+        if (d.lastError) html += `<div class="issue">${d.lastError}</div>`;
+        if (d.httpStatus) html += `<div style="font-size:0.85em;color:#8b949e">HTTP: ${d.httpStatus}</div>`;
+        if (d.lastCheck) html += `<div style="font-size:0.85em;color:#484f58">בדיקה אחרונה: ${new Date(d.lastCheck).toLocaleTimeString('he-IL')}</div>`;
+        if (d.lastAlertTime) html += `<div style="font-size:0.85em;color:#8b949e">התרעה אחרונה: ${new Date(d.lastAlertTime).toLocaleString('he-IL')}</div>`;
+        html += `<div style="font-size:0.85em;color:#484f58">סה"כ התרעות: ${d.totalAlertsReceived || 0}</div>`;
 
         el.innerHTML = html;
       } catch (e) {
@@ -300,27 +267,21 @@
         const res = await fetch('/api/oref/alerts');
         const d = await res.json();
         const el = document.getElementById('liveAlerts');
-        const alerts = d.alerts || [];
-        if (!alerts.length) {
+        const alert = d.alert;
+        if (!alert) {
           el.innerHTML = '<div class="empty">אין התרעות פעילות כרגע</div>';
           return;
         }
-        el.innerHTML = alerts.map(a => {
-          const cities = a.cities || a.data || [];
-          const cityStr = Array.isArray(cities) ? cities.join(', ') : String(cities);
-          return `
-            <div class="alert-item">
-              <div class="alert-cities">${cityStr}</div>
-              <div class="alert-meta">
-                ${a.type ? `סוג: ${a.type}` : ''}
-                ${a.cat ? ` | קטגוריה: ${a.cat}` : ''}
-                ${a.title ? ` | ${a.title}` : ''}
-              </div>
-              ${a.instructions || a.desc ? `<div class="alert-meta">הנחיות: ${a.instructions || a.desc}</div>` : ''}
+        const cities = alert.data || [];
+        const cityStr = Array.isArray(cities) ? cities.join(', ') : String(cities);
+        el.innerHTML = `
+          <div class="alert-item">
+            <div class="alert-cities">${cityStr}</div>
+            <div class="alert-meta">
+              cat: ${alert.cat || '?'} | ${alert.title || ''}
             </div>
-          `;
-        }).join('');
-        el.innerHTML += `<div style="font-size:0.8em;color:#484f58;margin-top:6px">מקור: ${d.activeSource || 'לא ידוע'}</div>`;
+          </div>
+        `;
       } catch (e) {
         console.error('live alerts error:', e);
       }
