@@ -5,10 +5,144 @@ const debug = require('./debug-log');
 const alertTypes = require('../data/alert-types.json');
 
 const COOLDOWN_MS = parseInt(process.env.COOLDOWN_MS || '60000', 10);
+const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 // Track last sent per config+alertKey to avoid spamming
 // key: `${configId}:${alertKey}` → timestamp
 const lastSent = new Map();
+
+/**
+ * Session Management Functions
+ */
+
+/**
+ * Find active session for given cities or create new one
+ */
+async function findOrCreateActiveSession(cities) {
+  const citiesKey = cities.sort().join(',');
+
+  // Clean up old sessions first
+  await cleanupOldSessions();
+
+  // Try to find existing active session for these cities
+  let session = await prisma.alertSession.findFirst({
+    where: {
+      cities: citiesKey,
+      isActive: true,
+    },
+  });
+
+  if (!session) {
+    // Create new session
+    session = await prisma.alertSession.create({
+      data: {
+        cities: citiesKey,
+        startedAt: new Date(),
+      },
+    });
+    debug.log('AlertSession', 'create', `יצירת session חדש עבור ערים: ${citiesKey}`, { sessionId: session.id, cities: citiesKey });
+  }
+
+  return session;
+}
+
+/**
+ * Find active session for given cities
+ */
+async function findActiveSession(cities) {
+  const citiesKey = cities.sort().join(',');
+
+  return await prisma.alertSession.findFirst({
+    where: {
+      cities: citiesKey,
+      isActive: true,
+    },
+  });
+}
+
+/**
+ * Update session with missile/aircraft activity
+ */
+async function updateSessionActivity(sessionId, alertType) {
+  const updateData = {};
+
+  if (alertType === 'missiles') {
+    updateData.hadMissileActivity = true;
+  } else if (alertType === 'aircraft') {
+    updateData.hadAircraftActivity = true;
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    await prisma.alertSession.update({
+      where: { id: sessionId },
+      data: updateData,
+    });
+    debug.log('AlertSession', 'update', `עדכון פעילות session ${sessionId}: ${alertType}`, { sessionId, alertType });
+  }
+}
+
+/**
+ * Close session (mark as resolved)
+ */
+async function closeSession(sessionId) {
+  await prisma.alertSession.update({
+    where: { id: sessionId },
+    data: {
+      isActive: false,
+      resolvedAt: new Date(),
+    },
+  });
+  debug.log('AlertSession', 'close', `סגירת session ${sessionId}`, { sessionId });
+}
+
+/**
+ * Clean up old sessions (older than 2 hours without resolution)
+ */
+async function cleanupOldSessions() {
+  const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS);
+
+  const result = await prisma.alertSession.updateMany({
+    where: {
+      isActive: true,
+      createdAt: { lt: cutoff },
+    },
+    data: {
+      isActive: false,
+      resolvedAt: new Date(),
+    },
+  });
+
+  if (result.count > 0) {
+    debug.log('AlertSession', 'cleanup', `ניקיון ${result.count} sessions ישנים`, { cleanedCount: result.count });
+  }
+}
+
+/**
+ * Send sticker for resolved alert based on session activity
+ */
+async function sendStickerForResolvedAlert(alertType, cities, alert) {
+  const configs = await prisma.alertConfig.findMany({
+    where: { enabled: true },
+  });
+
+  if (!configs.length) {
+    debug.log('AlertProcessor', 'warn', 'יש התרעת סיום אבל אין הגדרות פעילות בDB');
+    return;
+  }
+
+  for (const config of configs) {
+    const configCities = config.cities.split(',').map((c) => c.trim()).filter(Boolean);
+    const matchedCities = configCities.filter((city) => cities.includes(city));
+
+    debug.log('AlertProcessor', 'match', `הגדרה "${config.name}" — ${matchedCities.length ? 'יש התאמה' : 'אין התאמה'}`, {
+      configName: config.name, alertType, configCities, matchedCities, activeCities: cities,
+    });
+
+    if (matchedCities.length > 0) {
+      await sendStickerForAlert(config, alertType, matchedCities);
+    }
+  }
+}
 
 /**
  * Classify an oref alert into one of our 4 keys:
@@ -106,11 +240,42 @@ async function processAlert(alert) {
 
   if (alertCities.size === 0) return;
 
+  const cities = [...alertCities];
   const typeLabel = alertTypes.find(t => t.key === alertKey)?.label || alertKey;
   debug.log('OrefAlerts', 'alert', `${typeLabel} — ${alertCities.size} ערים`, {
-    alertKey, cat: alert.cat, title: alert.title, cities: [...alertCities],
+    alertKey, cat: alert.cat, title: alert.title, cities,
   });
 
+  // Session management for tracking event lifecycle
+  if (alertKey === 'incoming') {
+    // Start new session for preparatory alert
+    await findOrCreateActiveSession(cities);
+  }
+
+  if (alertKey === 'missiles' || alertKey === 'aircraft') {
+    // Mark activity in active session
+    const session = await findOrCreateActiveSession(cities);
+    await updateSessionActivity(session.id, alertKey);
+  }
+
+  if (alertKey === 'resolved') {
+    // Check if session had missile/aircraft activity
+    const session = await findActiveSession(cities);
+    if (session) {
+      const resolvedAlertType = session.hadMissileActivity || session.hadAircraftActivity
+        ? 'resolved'
+        : 'resolved_no_alert';
+
+      await closeSession(session.id);
+
+      // Send appropriate sticker based on activity
+      await sendStickerForResolvedAlert(resolvedAlertType, cities, alert);
+      return; // Skip regular processing for resolved alerts
+    }
+    // If no session found, treat as regular resolution
+  }
+
+  // Regular alert processing for non-resolved alerts
   const configs = await prisma.alertConfig.findMany({
     where: { enabled: true },
   });
@@ -125,7 +290,7 @@ async function processAlert(alert) {
     const matchedCities = configCities.filter((city) => alertCities.has(city));
 
     debug.log('AlertProcessor', 'match', `הגדרה "${config.name}" — ${matchedCities.length ? 'יש התאמה' : 'אין התאמה'}`, {
-      configName: config.name, alertKey, configCities, matchedCities, activeCities: [...alertCities],
+      configName: config.name, alertKey, configCities, matchedCities, activeCities: cities,
     });
 
     if (matchedCities.length > 0) {

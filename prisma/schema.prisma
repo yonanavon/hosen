@@ -69,6 +69,22 @@ model StickerMapping {
   @@map("sticker_mappings")
 }
 
+model AlertSession {
+  id                  Int       @id @default(autoincrement())
+  cities              String    // Affected cities (comma-separated)
+  startedAt           DateTime
+  resolvedAt          DateTime?
+  hadMissileActivity  Boolean   @default(false)
+  hadAircraftActivity Boolean   @default(false)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([cities])
+  @@map("alert_sessions")
+}
+
 model AlertLog {
   id            Int      @id @default(autoincrement())
   alertConfigId Int?
