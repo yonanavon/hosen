@@ -138,6 +138,10 @@
       <div id="activeAlerts"><div class="empty">אין התרעות פעילות</div></div>
     </div>
     <div class="card">
+      <h2>היסטוריית התרעות מפיקוד העורף</h2>
+      <div id="orefHistory"><div class="empty">אין רשומות</div></div>
+    </div>
+    <div class="card">
       <h2>לוג שליחות אחרון</h2>
       <div id="alertLogs"><div class="empty">אין רשומות</div></div>
     </div>
@@ -471,6 +475,22 @@
       } catch { /* ignore */ }
     }
 
+    async function loadOrefHistory() {
+      try {
+        const res = await fetch('/api/alerts/oref-history', { headers });
+        const { history } = await res.json();
+        const el = document.getElementById('orefHistory');
+        if (!history.length) { el.innerHTML = '<div class="empty">אין רשומות</div>'; return; }
+        el.innerHTML = history.map(h => `
+          <div class="log-entry">
+            <span class="log-time">${new Date(h.receivedAt).toLocaleString('he-IL')}</span>
+            <strong>${h.title}</strong>
+            <div style="font-size:0.85em;color:#94a3b8">${h.cities}</div>
+          </div>
+        `).join('');
+      } catch { /* ignore */ }
+    }
+
     async function loadLogs() {
       try {
         const res = await fetch('/api/alerts/logs', { headers });
@@ -493,12 +513,14 @@
     loadGroups();
     loadConfigs();
     loadAlerts();
+    loadOrefHistory();
     loadLogs();
 
     // Auto-refresh monitor
     setInterval(() => {
       if (document.getElementById('panel-monitor').classList.contains('active')) {
         loadAlerts();
+        loadOrefHistory();
         loadLogs();
       }
     }, 5000);

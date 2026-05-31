@@ -97,3 +97,13 @@ model AlertLog {
 
   @@map("alert_logs")
 }
+
+model OrefAlertHistory {
+  id         Int      @id @default(autoincrement())
+  cat        String
+  title      String
+  cities     String
+  receivedAt DateTime @default(now())
+
+  @@map("oref_alert_history")
+}

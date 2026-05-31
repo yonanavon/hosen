@@ -9,6 +9,7 @@ const { OrefClient } = require('./orefClient');
 const { getWhatsAppService } = require('./services/whatsapp.service');
 const { processAlert } = require('./services/alert-processor');
 const { addPending } = require('./services/sticker.service');
+const { prisma } = require('./lib/prisma');
 
 const app = express();
 const server = http.createServer(app);
@@ -70,10 +71,29 @@ io.emit = function (event, ...args) {
 
 // --- Start alert polling + processing ---
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || '3000', 10);
+let lastSavedAlertFingerprint = null;
+
 orefClient.on('alert', (alert) => {
   processAlert(alert).catch((err) =>
     console.error('[AlertProcessor] Error:', err)
   );
+
+  if (alert) {
+    const cities = Array.isArray(alert.data) ? alert.data : (alert.data ? String(alert.data).split(',') : []);
+    const fingerprint = `${alert.cat}|${alert.title}|${cities.slice().sort().join(',')}`;
+    if (fingerprint !== lastSavedAlertFingerprint) {
+      lastSavedAlertFingerprint = fingerprint;
+      prisma.orefAlertHistory.create({
+        data: {
+          cat: String(alert.cat || ''),
+          title: alert.title || '',
+          cities: cities.map(c => c.trim()).filter(Boolean).join(', '),
+        },
+      }).catch((err) => console.error('[AlertHistory] Error saving:', err));
+    }
+  } else {
+    lastSavedAlertFingerprint = null;
+  }
 });
 orefClient.startPolling(POLL_INTERVAL);
 
